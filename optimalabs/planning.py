@@ -15,7 +15,7 @@ from numpy import (
     full
 )
 from scipy.optimize import Bounds, LinearConstraint, OptimizeResult, minimize
-from optimalabs.optimization import Func, ExitCode, ralgb5a, emshor
+from optimalabs.nlp import Func, ExitCode, ralgb5a, emshor
 
 SUCCESS_CODES = {ExitCode.eps_f, ExitCode.eps_g, ExitCode.eps_x}
 
