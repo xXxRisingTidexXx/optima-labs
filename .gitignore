@@ -40,3 +40,4 @@ __pypackages__/
 .mypy_cache/
 .pdm-python
 .idea
+latex/out

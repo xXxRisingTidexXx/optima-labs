@@ -1,0 +1,373 @@
+\documentclass[12pt]{report}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[ukrainian]{babel}
+\usepackage[a4paper, portrait, top=20mm, right=20mm, bottom=20mm, left=20mm]{geometry}
+\usepackage[parfill]{parskip}
+\usepackage{graphicx}
+\usepackage{fancyvrb}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{titlesec}
+\usepackage[unicode]{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue, pageanchor=false}
+\begin{document}
+    \begin{titlepage}
+        \centering
+        Київський академічний університет
+        \vfill
+        \vspace{0.5cm}
+        \huge \textbf{Завдання планування виробництва} \\
+        \vspace{0.5cm}
+        \normalsize Данило Петраківський
+        \vfill
+        \normalsize Київ --- 2023
+    \end{titlepage}
+
+    \section*{Постановка задачі}\label{sec:problem}
+
+    Фірма на запланований період має виготовити $a$ одиниць продукції, використовуючи $n$ технологічних способів.
+    При виробництві $x_j$ одиниць продукції $j$-м технологічним способом витрати рівні
+    $c_j x_j + d_j x_j ^ 2 (c_j > 0, d_j > 0)$.
+    Обсяги використовуваних ресурсів $i$-го виду $(i = \overline{1, m})$ та норми їх використання $j$-м технологічним
+    способом відповідно дорівнюють $b_i$ і $a_{ij}$.
+    Визначити скільки виробів треба виготовити кожним способом, щоб загальні витрати на виробництво були мінімальними.
+    Математична модель цього завдання зводиться до задачі нелінійного (квадратичного) програмування:
+
+    \[\min z = \sum_{j = 1}^{n} (c_j x_j + d_j x_j ^ 2)\]
+
+    При обмеженнях:
+
+    \begin{gather*}
+        \sum_{j = 1}^{n} x_j = a \\
+        \sum_{j = 1}^{n} a_{ij} x_j \le b_i, (i = \overline{1, m}) \\
+        x_j \ge 0, (j = \overline{1, n})
+    \end{gather*}
+
+    \section*{Вхідні дані}\label{sec:input}
+
+    У якості зразка візьмемо невелику кількість типів продукції і ресурсів, $a$:
+
+    \begin{center}
+        \begin{tabular}{c c c}
+            2.567 & 7.21  & 0.12 \\
+            1.98  & 7.3   & 6.21 \\
+            0.31  & 2.721 & 8.12 \\
+            1.372 & 4.203 & 2.91
+        \end{tabular}
+    \end{center}
+
+    Відповідні їм значення норм, $b$:
+
+    \begin{center}
+        \begin{tabular}{c c c c}
+            95 & 150.67 & 23.76 & 61.21
+        \end{tabular}
+    \end{center}
+
+    Витрат першого порядку $c$:
+
+    \begin{center}
+        \begin{tabular}{c c c}
+            0.6 & 2.6 & 9.15
+        \end{tabular}
+    \end{center}
+
+    Витрат другого порядку $d$:
+
+    \begin{center}
+        \begin{tabular}{c c c}
+            0.19 & 0.08 & 1.5
+        \end{tabular}
+    \end{center}
+
+    У сумарно слід виготовити $a = 11$ пристроїв.
+    В оптимальному випадку слід виготовити 7 речей першого типу й 4 другого.
+
+    \section*{Програмні реалізації}\label{sec:implementations}
+
+    Весь код написаний і зневаджений на мові python з використанням готових рішень від scipy та самописних функцій.
+
+    \subsection*{SciPy, trust-region}\label{subsec:scipy-trust-region}
+
+    Для початку, реалізуємо вирази для обчислення функції, якобіана та гессіана:
+
+    \begin{lstlisting}[language=Python,label={lst:scipy-trust-region1}]
+from numpy import ndarray, diag
+
+def planning_objective(
+    x: ndarray,
+    c: ndarray,
+    d: ndarray
+) -> float:
+    return c @ x + d @ x ** 2
+
+
+def planning_jacobian(
+    x: ndarray,
+    c: ndarray,
+    d: ndarray
+) -> ndarray:
+    return c + 2 * d * x
+
+
+def planning_hessian(
+    _x: ndarray,
+    _c: ndarray,
+    d: ndarray
+) -> ndarray:
+    return diag(2 * d)
+    \end{lstlisting}
+
+    А тепер сама процедура обчислення на основі
+    \href{https://docs.scipy.org/doc/scipy/reference/optimize.minimize-trustconstr.html}{довірчої області}:
+
+    \begin{lstlisting}[language=Python,label={lst:scipy-trust-region-2}]
+from numpy import inf, zeros, full, vstack, ones, insert
+from scipy.optimize import (
+    Bounds,
+    LinearConstraint,
+    OptimizeResult,
+    minimize
+)
+
+def minimize_planning_constrained(
+    c: ndarray,
+    d: ndarray,
+    s: float,
+    a: ndarray,
+    b: ndarray
+) -> OptimizeResult:
+    m, n = len(b), len(c)
+    x0 = full(n, s // n)
+    x0[: s % n] += 1
+    bounds = Bounds(zeros(n), full(n, inf))
+    constraint = LinearConstraint(
+        vstack([ones((1, n)), a]),
+        insert(zeros(m), 0, s, 0),
+        insert(b, 0, s, 0)
+    )
+    return minimize(
+        planning_objective,
+        x0,
+        (c, d),
+        'trust-constr',
+        planning_jacobian,
+        planning_hessian,
+        bounds=bounds,
+        constraints=constraint
+    )
+    \end{lstlisting}
+
+    На що отримуємо дуже хороші результати роботи й майже вірну відповідь:
+
+    \begin{verbatim}
+ barrier_parameter: 0.0008000000000000003
+ barrier_tolerance: 0.0008000000000000003
+          cg_niter: 9
+      cg_stop_cond: 1
+            constr: [array([11., 46.98129589, 43.25837261, 13.14470093,
+                    26.52146586]), array([6.96268412e+00, 4.03718023e+00,
+                    1.35645694e-04])]
+       constr_nfev: [0, 0]
+       constr_nhev: [0, 0]
+       constr_njev: [0, 0]
+    constr_penalty: 1.0
+  constr_violation: 0.0
+    execution_time: 0.01324915885925293
+               fun: 25.19043053586868
+              grad: array([3.24581997, 3.24594884, 9.15040694])
+               jac: [array([[1.   , 1.   , 1.   ],
+       [2.567, 7.21 , 0.12 ],
+       [1.98 , 7.3  , 6.21 ],
+       [0.31 , 2.721, 8.12 ],
+       [1.372, 4.203, 2.91 ]]), array([[1., 0., 0.],
+       [0., 1., 0.],
+       [0., 0., 1.]])]
+   lagrangian_grad: array([ 5.31606926e-10, -6.61158041e-10,  1.29550592e-10])
+           message: '`gtol` termination condition is satisfied.'
+            method: 'tr_interior_point'
+              nfev: 8
+              nhev: 8
+               nit: 11
+             niter: 11
+              njev: 8
+        optimality: 6.611580405336756e-10
+            status: 1
+           success: True
+         tr_radius: 5526.706993994392
+                 v: [array([-3.24567701e+00, -3.67875360e-07,
+                    -1.10455447e-05, 1.45019076e-05, -7.10186596e-06]),
+                    array([-1.14898229e-04, -1.98158068e-04, -5.90475838e+00
+                    ])]
+                 x: array([6.96268412e+00, 4.03718023e+00, 1.35645694e-04])
+    \end{verbatim}
+
+    \subsection*{SciPy, штрафна функція}\label{subsec:scipy-penalty-objective}
+
+    Тут ми обираємо алгоритм BFGS, але перед тим реалізуємо відповідні функцію, якобіан і гессіан:
+
+    \begin{lstlisting}[language=Python,label={lst:scipy-penalty-objective-1}]
+from numpy import maximum, where
+
+def planning_with_penalty_objective(
+    x: ndarray,
+    c: ndarray,
+    d: ndarray,
+    s: float,
+    a: ndarray,
+    b: ndarray,
+    mu: float = 1e6
+) -> float:
+    alpha = (
+        sum(maximum(a @ x - b, 0) ** 2)
+        + sum(maximum(-x, 0) ** 2)
+        + (sum(x) - s) ** 2
+    )
+    return planning_objective(x, c, d) + mu * alpha
+
+
+def planning_with_penalty_jacobian(
+    x: ndarray,
+    c: ndarray,
+    d: ndarray,
+    s: float,
+    a: ndarray,
+    b: ndarray,
+    mu: float = 1e6
+) -> ndarray:
+    g = repeat(reshape(a @ x - b, (-1, 1)), len(c), 1)
+    alpha = 2 * sum(maximum(g, 0) * where(g >= 0, a, 0), 0)
+    alpha += (
+        2 * maximum(-x, 0) * where(x <= 0, -1, 0)
+        + 2 * (sum(x) - s)
+    )
+    return planning_jacobian(x, c, d) + mu * alpha
+    \end{lstlisting}
+
+    І сама процедура мінімізації:
+
+    \begin{lstlisting}[language=Python,label={lst:scipy-penalty-objective-2}]
+def minimize_planning_with_penalty(
+    c: ndarray,
+    d: ndarray,
+    s: float,
+    a: ndarray,
+    b: ndarray
+) -> OptimizeResult:
+    n = len(c)
+    x0 = full(n, s // n)
+    x0[: s % n] += 1
+    return minimize(
+        planning_with_penalty_objective,
+        x0,
+        (c, d, s, a, b),
+        'BFGS',
+        planning_with_penalty_jacobian
+    )
+    \end{lstlisting}
+
+    Отримані результати процесу:
+
+    \begin{verbatim}
+      fun: 25.189618281111358
+ hess_inv: array([[ 1.85185194e+00, -1.85185164e+00, -1.48147908e-07],
+       [-1.85185164e+00,  1.85185235e+00, -3.51851285e-07],
+       [-1.48147908e-07, -3.51851285e-07,  4.99999222e-07]])
+      jac: array([-5.23889865e-09, -5.23889687e-09, -5.23861488e-09])
+  message: 'Optimization terminated successfully.'
+     nfev: 99
+      nit: 18
+     njev: 99
+   status: 0
+  success: True
+        x: array([ 6.96296336e+00,  4.03703797e+00, -2.95203253e-06])
+    \end{verbatim}
+
+    \subsection*{ralgb5a, штрафна функція}\label{subsec:ralgb5a-penalty-objective}
+
+    Тут ми скористаємося раніше
+    \href{https://github.com/xXxRisingTidexXx/optima-labs/blob/62f605afb3c3caf3be5f4a18b1b14d9a99404bd4/optimalabs/nlp.py}{реалізованим r-алгоритмом}
+    та відповідними процедурами задачі, якобіана й гессіана зі штрафними функціями для безумовної оптимізації.
+
+    \begin{lstlisting}[language=Python,label={lst:ralgb5a-penalty-objective}]
+from optimalabs.nlp import Func, ExitCode, ralgb5a
+
+SUCCESS_CODES = {ExitCode.eps_f, ExitCode.eps_g, ExitCode.eps_x}
+
+
+def minimize_planning_ralgb5a(
+    c: ndarray,
+    d: ndarray,
+    s: float,
+    a: ndarray,
+    b: ndarray
+) -> OptimizeResult:
+    n = len(c)
+    x0 = full((n, 1), s // n)
+    x0[: s % n] += 1
+    result = ralgb5a(
+        make_planning_with_penalty_joint(c, d, s, a, b),
+        x0
+    )
+    return OptimizeResult(
+        x=result.x_r.reshape(-1),
+        success=(result.exit_code in SUCCESS_CODES),
+        status=result.exit_code.value,
+        message=result.exit_code.name,
+        fun=planning_with_penalty_objective(
+            result.x_r,
+            c,
+            d,
+            s,
+            a,
+            b
+        ),
+        nit=result.n_iter,
+        nfev=result.n_calls,
+        njev=result.n_calls
+    )
+
+
+def make_planning_with_penalty_joint(
+    c: ndarray,
+    d: ndarray,
+    s: float,
+    a: ndarray,
+    b: ndarray,
+    mu: float = 1e6
+) -> Func:
+    def func(x: ndarray) -> tuple[float, ndarray]:
+        x0 = x.reshape(-1)
+        f = planning_with_penalty_objective(x0, c, d, s, a, b, mu)
+        g = planning_with_penalty_jacobian(x0, c, d, s, a, b, mu)
+        return f, g.reshape((-1, 1))
+
+    return func
+    \end{lstlisting}
+
+    І результати роботи, близькі до правильних:
+
+    \begin{verbatim}
+     fun: array([9.26969805e+08])
+ message: 'eps_x'
+    nfev: 130
+     nit: 61
+    njev: 130
+  status: 3
+ success: True
+       x: array([ 6.96296336e+00,  4.03703797e+00, -2.95203252e-06])
+    \end{verbatim}
+
+    \section*{Висновки}
+
+    \begin{enumerate}
+        \item Метод штрафних функцій дозволяє обчислювати оптимальне значення з точністю, що близька до перевірених
+        методів, як от довірчих областей.
+        \item r-алгоритм потребує більш, ніж у 10 разів більше ітерацій за стандартизовані реалізації.
+        \item Точна реалізація гессіана зменшує кількість ітерацій методу довірчих областей на ~45\%.
+        \item Наведені алгоритми повертають дійсні значення, але результати мають належати множині цілих чисел; для
+        доведення відповіді слід застосувати, наприклад, повний перебір між округленими значеннями, щоб відшукати
+        мінімум цільової функції.
+    \end{enumerate}
+\end{document}
